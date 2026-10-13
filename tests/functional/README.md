@@ -27,11 +27,28 @@ and allocates the cluster only for affected Flash-Next AR/MTP coverage (or an
 explicit benchmark request). The workflow and harness come from the trusted
 workflow revision; only the production binary is built from the approved PR.
 It fetches the pinned Q4 shards, MTP sidecar and vision projector into a persistent
-cache, and retains reports and selection reasons as artifacts. Weight reuse
-depends on the cluster preserving that user's cache on the allocated machine.
+cache under `$GUFO_CI_CACHE` (default `$RUNNER_TOOL_CACHE/gufo`; the weights need
+about 110 GiB free), and retains reports and selection reasons as artifacts.
+Weight and `ccache` reuse depend on the cluster preserving that directory on the
+allocated machine. A benchmark request also builds the merge base and runs the
+same AR sweep on it first, so the report shows per-depth deltas; one sweep per
+revision is an observation, not a qualified timing regression.
+
+The cluster installs the client from `requirements.txt`, pinned to the flake's
+versions, because newer unpinned SDKs break every suite inside the client. Keep it
+covering every third-party import here; the install step imports the harness
+to catch gaps.
+
+A hosted `report` job then updates a single PR comment with results, failure
+log tails and benchmark deltas, sets the `devlab/functional` commit status and
+removes `ci:functional`. The status is advisory: it is not a required check, so
+a broken cluster never blocks merging. Suite failures report `failure`; cluster
+or harness problems (authorization, build, download, cancellation) report
+`error`. The PR write token stays on the hosted runner.
 
 `cluster.py` executes each configuration group with a fresh server/cache history
-and continues to other groups after a failure. Candidate correctness uses
+and continues to other groups after a failure, removing each group's disk cache
+once it finishes. Candidate correctness uses
 `--record-baseline` to capture observations; this does **not** qualify timing
 regressions. Failures fail the cluster job. Deferred cache rollout suites,
 other-model coverage, numerical checks and agent-client replays remain named
@@ -42,6 +59,7 @@ Planner and executor checks are CPU-only:
 
 ```sh
 python3 -m unittest discover -s tests/functional -p test_impact.py
+python3 -m unittest discover -s tests/functional -p test_report.py
 ```
 
 
